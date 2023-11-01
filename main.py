@@ -29,8 +29,13 @@ class Options:
         self.dataset_list = r'test_pairs.txt'
         self.batch_size = 1
         self.workers = 1
-
+        self.semantic_nc = 13
+        self.init_type = 'xavier'
+        self.init_variance = 0.
+        self.checkpoint_dir = r'./checkpoints/'
+        self.seg_checkpoint = r'seg_final.pth'
 opt = Options()
+
 test_dataset = VITONDataset(opt)
 test_loader = VITONDataLoader(opt, test_dataset)
 
@@ -61,3 +66,29 @@ Image.fromarray(np.uint8(c[0][0] * 255))
 
 # agnostic segmentation without the body and hands
 Image.fromarray(np.uint8(parse_agnostic_down[0][0] * 255))
+
+parse_pred_down = seg(seg_input)
+parse_pred = gauss(up(parse_pred_down))
+parse_pred = parse_pred.argmax(dim=1)[:, None]
+
+parse_old = torch.zeros(parse_pred.size(0), 13, opt.load_height, opt.load_width, dtype=torch.float).cuda()
+parse_old.scatter_(1, parse_pred, 1.0)
+
+labels = {
+    0:  ['background',  [0]],
+    1:  ['paste',       [2, 4, 7, 8, 9, 10, 11]],
+    2:  ['upper',       [3]],
+    3:  ['hair',        [1]],
+    4:  ['left_arm',    [5]],
+    5:  ['right_arm',   [6]],
+    6:  ['noise',       [12]]
+}
+parse = torch.zeros(parse_pred.size(0), 7, opt.load_height, opt.load_width, dtype=torch.float).cuda()
+for j in range(len(labels)):
+    for label in labels[j][1]:
+        parse[:, j] += parse_old[:, label]
+# For debugging
+seg_op = np.uint8(parse[0][2])
+for i in range(3, 6):
+    seg_op = seg_op + np.uint8(parse[0][i])
+Image.fromarray(seg_op * 255)
